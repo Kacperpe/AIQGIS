@@ -1,0 +1,5 @@
+[metadata]
+name=qgis_ai_assistant
+version=0.1
+description=QGIS AI Assistant Plugin
+author=Kacperpe

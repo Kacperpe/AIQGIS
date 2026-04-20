@@ -1,5 +1,7 @@
-[metadata]
-name=qgis_ai_assistant
+[general]
+name=AI Assistant for QGIS
+qgisMinimumVersion=3.0
+description=Chat with Claude AI about your GIS data
 version=0.1
-description=QGIS AI Assistant Plugin
-author=Kacperpe
+author=AI Assistant
+email=test@test.com

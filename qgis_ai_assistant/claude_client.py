@@ -9,26 +9,137 @@ class AIClient:
         "anthropic": {
             "label": "Anthropic",
             "model": "claude-sonnet-4-20250514",
+            "api_style": "anthropic",
+            "settings": [
+                {
+                    "id": "api_key",
+                    "label": "Klucz API",
+                    "prompt": "Wklej klucz API dla Anthropic:",
+                    "secret": True,
+                    "required": True,
+                    "prompt_if_missing": True,
+                }
+            ],
         },
         "openai": {
             "label": "OpenAI",
             "model": "gpt-4o-mini",
+            "base_url": "https://api.openai.com/v1",
+            "api_style": "openai_compatible",
+            "settings": [
+                {
+                    "id": "api_key",
+                    "label": "Klucz API",
+                    "prompt": "Wklej klucz API dla OpenAI:",
+                    "secret": True,
+                    "required": True,
+                    "prompt_if_missing": True,
+                }
+            ],
         },
         "gemini": {
             "label": "Google Gemini",
             "model": "gemini-2.5-flash",
+            "api_style": "gemini",
+            "settings": [
+                {
+                    "id": "api_key",
+                    "label": "Klucz API",
+                    "prompt": "Wklej klucz API dla Google Gemini:",
+                    "secret": True,
+                    "required": True,
+                    "prompt_if_missing": True,
+                }
+            ],
         },
         "openrouter": {
             "label": "OpenRouter",
             "model": "openai/gpt-4o-mini",
+            "base_url": "https://openrouter.ai/api/v1",
+            "api_style": "openai_compatible",
+            "settings": [
+                {
+                    "id": "api_key",
+                    "label": "Klucz API",
+                    "prompt": "Wklej klucz API dla OpenRouter:",
+                    "secret": True,
+                    "required": True,
+                    "prompt_if_missing": True,
+                }
+            ],
         },
         "mistral": {
             "label": "Mistral AI",
             "model": "mistral-large-latest",
+            "base_url": "https://api.mistral.ai/v1",
+            "api_style": "openai_compatible",
+            "settings": [
+                {
+                    "id": "api_key",
+                    "label": "Klucz API",
+                    "prompt": "Wklej klucz API dla Mistral AI:",
+                    "secret": True,
+                    "required": True,
+                    "prompt_if_missing": True,
+                }
+            ],
         },
         "xai": {
             "label": "xAI",
             "model": "grok-4.20-reasoning",
+            "base_url": "https://api.x.ai/v1",
+            "api_style": "openai_compatible",
+            "settings": [
+                {
+                    "id": "api_key",
+                    "label": "Klucz API",
+                    "prompt": "Wklej klucz API dla xAI:",
+                    "secret": True,
+                    "required": True,
+                    "prompt_if_missing": True,
+                }
+            ],
+        },
+        "lmstudio": {
+            "label": "LM Studio",
+            "model": "local-model",
+            "base_url": "http://127.0.0.1:1234/v1",
+            "api_style": "openai_compatible",
+            "settings": [
+                {
+                    "id": "base_url",
+                    "label": "Endpoint URL",
+                    "prompt": (
+                        "Podaj adres serwera LM Studio "
+                        "(OpenAI-compatible, zwykle http://127.0.0.1:1234/v1):"
+                    ),
+                    "required": True,
+                    "default": "http://127.0.0.1:1234/v1",
+                    "prompt_if_missing": True,
+                },
+                {
+                    "id": "model",
+                    "label": "Model",
+                    "prompt": (
+                        "Podaj model dla LM Studio "
+                        "(np. local-model albo identyfikator zaladowanego modelu):"
+                    ),
+                    "required": True,
+                    "default": "local-model",
+                    "prompt_if_missing": True,
+                },
+                {
+                    "id": "api_key",
+                    "label": "Klucz API (opcjonalny)",
+                    "prompt": (
+                        "Jesli lokalny serwer LM Studio wymaga autoryzacji, "
+                        "wklej klucz API. Mozesz zostawic puste."
+                    ),
+                    "secret": True,
+                    "required": False,
+                    "default": "",
+                },
+            ],
         },
     }
 
@@ -52,41 +163,158 @@ class AIClient:
                 return provider
         return None
 
-    def __init__(self, provider: str, api_key: str):
+    @classmethod
+    def provider_setting_fields(cls, provider):
+        config = cls.PROVIDERS.get(provider, {})
+        return [dict(field) for field in config.get("settings", [])]
+
+    @classmethod
+    def provider_configuration_needed(cls, provider, saved_settings):
+        settings = saved_settings or {}
+        for field in cls.provider_setting_fields(provider):
+            if field.get("prompt_if_missing") and not str(settings.get(field["id"], "")).strip():
+                return True
+        return False
+
+    @classmethod
+    def normalize_settings(cls, provider, settings):
+        if provider not in cls.PROVIDERS:
+            raise ValueError(f"Nieobslugiwany provider API: {provider}")
+
+        config = cls.PROVIDERS[provider]
+        source = settings or {}
+        normalized = {}
+
+        for field in cls.provider_setting_fields(provider):
+            field_id = field["id"]
+            value = source.get(field_id, field.get("default", ""))
+            value = "" if value is None else str(value).strip()
+            if not value:
+                value = str(field.get("default", "")).strip()
+            if field_id == "base_url":
+                value = value.rstrip("/")
+            if field.get("required") and not value:
+                raise ValueError(
+                    f"Brak wymaganego pola '{field['label']}' dla providera "
+                    f"{cls.provider_label(provider)}."
+                )
+            normalized[field_id] = value
+
+        if "api_key" not in normalized:
+            normalized["api_key"] = ""
+        if "model" not in normalized:
+            normalized["model"] = config.get("model", "")
+        if "base_url" not in normalized and config.get("base_url"):
+            normalized["base_url"] = str(config["base_url"]).rstrip("/")
+        return normalized
+
+    def __init__(self, provider: str, settings):
         self.history = []
         self.system_prompt = (
             "Jestes ekspertem GIS zintegrowanym z QGIS 3.x. "
             "Specjalizujesz sie w analizie danych przestrzennych, "
             "pisaniu kodu PyQGIS, ukladach wspolrzednych (CRS/EPSG), "
             "oraz bibliotekach GeoPandas, Shapely i GDAL. "
+            "Masz dostep do narzedzi QGIS i gdy pytanie dotyczy aktualnego projektu, "
+            "warstw, CRS, selekcji, tabel atrybutow, stanu projektu albo operacji GIS, "
+            "najpierw uzywaj narzedzi zamiast zgadywac. "
+            "Dla ogolnego kontekstu projektu uzywaj get_project_info, dla aktywnej warstwy "
+            "get_active_layer_info, a dla selekcji get_selected_features_info. "
+            "Przed operacjami modyfikujacymi dane, warstwy lub projekt najpierw "
+            "uzyj preview_action, a dopiero potem wykonuj zmiane, chyba ze uzytkownik "
+            "wprost kaze od razu wykonac operacje. "
             "Gdy piszesz kod PyQGIS, uzywaj iface i QgsProject.instance(), "
             "dodawaj obsluge bledow i komentuj kod po polsku. "
             "Odpowiadaj po polsku, konkretnie i technicznie."
         )
-        self.set_credentials(provider, api_key)
+        self.set_credentials(provider, settings)
 
-    def set_credentials(self, provider: str, api_key: str):
-        if provider not in self.PROVIDERS:
+    def set_credentials(self, provider: str, settings):
+        config = self.PROVIDERS.get(provider)
+        if not config:
             raise ValueError(f"Nieobslugiwany provider API: {provider}")
-        self.provider = provider
-        self.api_key = api_key.strip()
-        self.model = self.PROVIDERS[provider]["model"]
 
-    def chat(self, user_message: str) -> str:
+        normalized = self.normalize_settings(provider, settings)
+        self.provider = provider
+        self.settings = normalized
+        self.api_style = config.get("api_style", "openai_compatible")
+        self.api_key = normalized.get("api_key", "")
+        self.model = normalized.get("model", config.get("model", ""))
+        self.base_url = normalized.get("base_url", "").rstrip("/")
+
+    def supports_tools(self):
+        return self.api_style == "openai_compatible"
+
+    def chat(self, user_message: str, tools=None, tool_executor=None, status_callback=None) -> str:
         pending_history = self.history + [{"role": "user", "content": user_message}]
-        payload, headers, url = self._build_request(pending_history)
-        result = self._post_json(url, payload, headers)
-        reply = self._parse_reply(result)
+
+        if self.supports_tools() and tools and tool_executor:
+            reply, updated_history = self._chat_with_tools(
+                pending_history,
+                tools,
+                tool_executor,
+                status_callback=status_callback,
+            )
+        else:
+            payload, headers, url = self._build_request(pending_history)
+            result = self._post_json(url, payload, headers)
+            reply = self._parse_reply(result)
+            updated_history = pending_history + [{"role": "assistant", "content": reply}]
+
         if not reply:
             raise Exception("API zwrocilo pusta odpowiedz.")
-        self.history = pending_history + [{"role": "assistant", "content": reply}]
+        self.history = updated_history
         return reply
 
     def reset(self):
         self.history = []
 
-    def _build_request(self, history):
-        if self.provider == "anthropic":
+    def _chat_with_tools(self, pending_history, tools, tool_executor, status_callback=None):
+        history = list(pending_history)
+
+        for _ in range(20):
+            payload, headers, url = self._build_request(history, tools=tools)
+            result = self._post_json(url, payload, headers)
+            message = self._extract_openai_message(result)
+            tool_calls = message.get("tool_calls") or []
+
+            if tool_calls:
+                history.append(
+                    {
+                        "role": "assistant",
+                        "content": message.get("content") or "",
+                        "tool_calls": tool_calls,
+                    }
+                )
+                for tool_call in tool_calls:
+                    tool_name = tool_call.get("function", {}).get("name", "")
+                    tool_args = self._parse_tool_arguments(tool_call)
+                    if status_callback:
+                        status_callback(f"Wywoluje narzedzie QGIS: {tool_name}...")
+                    tool_result = tool_executor(tool_name, tool_args)
+                    history.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tool_call.get("id", ""),
+                            "content": json.dumps(tool_result, ensure_ascii=False),
+                        }
+                    )
+                if status_callback:
+                    status_callback("Oczekuje na odpowiedz modelu po wykonaniu narzedzi...")
+                continue
+
+            reply = self._openai_content_to_text(message.get("content", ""))
+            if not reply and isinstance(message.get("refusal"), str):
+                reply = message["refusal"].strip()
+            if not reply:
+                raise Exception("Model nie zwrocil tresci odpowiedzi koncowej.")
+            history.append({"role": "assistant", "content": reply})
+            return reply, history
+
+        raise Exception("Przekroczono limit krokow narzedzi w jednej odpowiedzi.")
+
+    def _build_request(self, history, tools=None):
+        if self.api_style == "anthropic":
             payload = {
                 "model": self.model,
                 "max_tokens": 1024,
@@ -100,7 +328,7 @@ class AIClient:
             }
             return payload, headers, "https://api.anthropic.com/v1/messages"
 
-        if self.provider == "gemini":
+        if self.api_style == "gemini":
             payload = {
                 "systemInstruction": {"parts": [{"text": self.system_prompt}]},
                 "contents": self._gemini_contents(history),
@@ -119,22 +347,20 @@ class AIClient:
             "messages": self._openai_messages(history),
             "max_tokens": 1024,
         }
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
-        if self.provider == "openai":
-            url = "https://api.openai.com/v1/chat/completions"
-        elif self.provider == "openrouter":
-            url = "https://openrouter.ai/api/v1/chat/completions"
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+
+        if not self.base_url:
+            raise Exception(f"Brak konfiguracji URL dla providera: {self.provider}")
+
+        url = f"{self.base_url}/chat/completions"
+        if self.provider == "openrouter":
             headers["HTTP-Referer"] = "https://github.com/Kacperpe/AIQGIS"
             headers["X-Title"] = "AI Assistant for QGIS"
-        elif self.provider == "mistral":
-            url = "https://api.mistral.ai/v1/chat/completions"
-        elif self.provider == "xai":
-            url = "https://api.x.ai/v1/chat/completions"
-        else:
-            raise Exception(f"Brak konfiguracji URL dla providera: {self.provider}")
         return payload, headers, url
 
     def _post_json(self, url, payload, headers):
@@ -179,7 +405,7 @@ class AIClient:
         return json.dumps(data, ensure_ascii=False)
 
     def _parse_reply(self, data):
-        if self.provider == "anthropic":
+        if self.api_style == "anthropic":
             parts = data.get("content", [])
             texts = [
                 part.get("text", "")
@@ -188,7 +414,7 @@ class AIClient:
             ]
             return "\n".join(text for text in texts if text).strip()
 
-        if self.provider == "gemini":
+        if self.api_style == "gemini":
             candidates = data.get("candidates", [])
             if not candidates:
                 feedback = data.get("promptFeedback", {})
@@ -198,18 +424,43 @@ class AIClient:
             texts = [part.get("text", "") for part in parts if isinstance(part, dict)]
             return "\n".join(text for text in texts if text).strip()
 
+        message = self._extract_openai_message(data)
+        return self._openai_content_to_text(message.get("content", ""))
+
+    def _extract_openai_message(self, data):
         choices = data.get("choices", [])
         if not choices:
             raise Exception("Provider nie zwrocil listy choices.")
         message = choices[0].get("message", {})
-        content = message.get("content", "")
+        if not isinstance(message, dict):
+            raise Exception("Provider nie zwrocil poprawnego obiektu message.")
+        return message
+
+    def _openai_content_to_text(self, content):
         if isinstance(content, list):
             texts = []
             for item in content:
                 if isinstance(item, dict) and item.get("type") == "text":
                     texts.append(item.get("text", ""))
             return "\n".join(text for text in texts if text).strip()
-        return str(content).strip()
+        return str(content or "").strip()
+
+    def _parse_tool_arguments(self, tool_call):
+        raw_arguments = tool_call.get("function", {}).get("arguments", "{}")
+        if isinstance(raw_arguments, dict):
+            return raw_arguments
+        if not isinstance(raw_arguments, str):
+            raise Exception("Model zwrocil niepoprawny format argumentow narzedzia.")
+        text = raw_arguments.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise Exception(f"Niepoprawny JSON argumentow narzedzia: {text}") from exc
+        if not isinstance(parsed, dict):
+            raise Exception("Argumenty narzedzia musza byc obiektem JSON.")
+        return parsed
 
     def _openai_messages(self, history):
         return [{"role": "system", "content": self.system_prompt}] + history

@@ -1,7 +1,7 @@
 [general]
 name=AI Assistant for QGIS
 qgisMinimumVersion=3.0
-description=Chat with multiple AI providers about your GIS data
-version=0.2
+description=Chat with multiple AI providers, including LM Studio, about your GIS data
+version=0.11
 author=Kacper Pasinski
 email=127486836+Kacperpe@users.noreply.github.com

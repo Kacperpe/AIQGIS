@@ -38,8 +38,8 @@ class Worker(QThread):
         def on_tool_call(tool_name: str, tool_input: dict):
             try:
                 input_str = json.dumps(tool_input, ensure_ascii=False)
-            except Exception:
-                input_str = str(tool_input)
+            except Exception as exc:
+                input_str = f"<serialization error: {exc}>"
             self.tool_called.emit(tool_name, input_str)
 
         try:

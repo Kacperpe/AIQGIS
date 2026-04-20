@@ -67,7 +67,12 @@ class _MainThreadBridge(QObject):
         with self._lock:
             self._queue.append(work)
         self._request.emit()
-        event.wait(timeout=120)
+        timed_out = not event.wait(timeout=120)
+        if timed_out:
+            raise TimeoutError(
+                "Main-thread operation timed out after 120 s. "
+                "The QGIS main thread may be blocked."
+            )
 
         if "error" in result:
             raise result["error"]
@@ -153,7 +158,10 @@ def _tool_get_layer_info(params: dict) -> str:
     from qgis.core import QgsVectorLayer, QgsRasterLayer
 
     layer_name = params.get("layer_name", "")
-    sample_count = min(int(params.get("sample_features", 3)), 10)
+    try:
+        sample_count = min(int(params.get("sample_features", 3)), 10)
+    except (TypeError, ValueError):
+        sample_count = 3
 
     lyr = _find_layer_by_name(layer_name)
     if lyr is None:
@@ -254,7 +262,9 @@ def _tool_search_algorithms(params: dict) -> str:
 
     if not matches:
         return f"No algorithms found matching '{keyword}'."
-    return json.dumps(matches[:30], ensure_ascii=False, indent=2)
+    # Cap results to avoid overwhelming the context window
+    MAX_SEARCH_RESULTS = 30
+    return json.dumps(matches[:MAX_SEARCH_RESULTS], ensure_ascii=False, indent=2)
 
 
 def _tool_get_algorithm_info(params: dict) -> str:

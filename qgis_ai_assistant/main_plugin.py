@@ -18,8 +18,9 @@ def html_escape_code(text):
     code = text.strip("\n")
     if "\n" in code:
         first_line, rest = code.split("\n", 1)
+        stripped = first_line.strip()
         # strip language hint line (e.g. ```python)
-        if first_line.strip() and first_line.strip().replace("_", "").isalnum():
+        if stripped and stripped.replace("_", "").isalnum():
             code = rest
     return html.escape(code)
 

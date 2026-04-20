@@ -43,8 +43,12 @@ class ClaudeClient:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 return json.loads(resp.read())
         except urllib.error.HTTPError as e:
-            body = json.loads(e.read().decode("utf-8"))
-            raise Exception(f"Błąd API ({e.code}): {body.get('error', {}).get('message', str(body))}")
+            try:
+                body = json.loads(e.read().decode("utf-8"))
+                message = body.get("error", {}).get("message", str(body))
+            except (json.JSONDecodeError, Exception):
+                message = f"HTTP {e.code}"
+            raise Exception(f"Błąd API ({e.code}): {message}")
 
     def chat(self, user_message: str, on_tool_call=None) -> str:
         """

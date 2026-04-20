@@ -1,7 +1,7 @@
 [general]
 name=AI Assistant for QGIS
 qgisMinimumVersion=3.0
-description=Chat with multiple AI providers about your GIS data
+description=AI Agent that controls QGIS using Claude and Processing tools
 version=0.2
-author=Kacper Pasinski
-email=127486836+Kacperpe@users.noreply.github.com
+author=AI Assistant
+email=test@test.com

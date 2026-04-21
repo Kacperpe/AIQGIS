@@ -1,6 +1,8 @@
 import html
 import json
 import threading
+import webbrowser
+from pathlib import Path
 
 from qgis.PyQt.QtCore import QThread, pyqtSignal
 from qgis.PyQt.QtGui import QTextCursor
@@ -124,6 +126,7 @@ class AssistantDockWidget(QWidget):
             ("Ustawienia", self._change_settings),
             ("Warstwy", self._inject_layers),
             ("CRS", self._inject_crs),
+            ("Raport", self._show_report),
             ("Wyczysc", self._clear),
         ]:
             button = QPushButton(label)
@@ -434,6 +437,11 @@ class AssistantDockWidget(QWidget):
         self.status_label.setText("")
         self._welcome()
 
+    def _show_report(self):
+        path = self.client.logger.finish_session()
+        webbrowser.open(Path(path).resolve().as_uri())
+        self._append("system", f"Raport zapisany: {path}")
+
     def _welcome(self):
         provider_name = AIClient.provider_label(self.provider)
         tools_state = (
@@ -491,4 +499,3 @@ class AssistantDockWidget(QWidget):
             f"Zaktualizowano konfiguracje dla {AIClient.provider_label(provider)}."
             f" Model: {self.client.model}.",
         )
-

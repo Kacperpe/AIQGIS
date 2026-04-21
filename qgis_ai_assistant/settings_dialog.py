@@ -1,5 +1,6 @@
 from qgis.PyQt.QtCore import Qt
 from qgis.PyQt.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -63,7 +64,15 @@ class SettingsDialog(QDialog):
         self.error_label.hide()
         root.addWidget(self.error_label)
 
+        self.test_label = QLabel("")
+        self.test_label.setWordWrap(True)
+        self.test_label.setStyleSheet("color:#86efac;font-size:11px;")
+        self.test_label.hide()
+        root.addWidget(self.test_label)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        self.test_button = buttons.addButton("Test polaczenia", QDialogButtonBox.ActionRole)
+        self.test_button.clicked.connect(self._test_connection)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         buttons.setStyleSheet(
@@ -92,6 +101,8 @@ class SettingsDialog(QDialog):
 
     def _rebuild_fields(self):
         self._clear_fields()
+        self.error_label.hide()
+        self.test_label.hide()
         provider = self.provider_combo.currentData()
         saved_settings = self.load_settings_callback(provider)
 
@@ -99,15 +110,29 @@ class SettingsDialog(QDialog):
             label = QLabel(field["label"])
             label.setStyleSheet("color:#c7ceda;font-size:12px;")
 
-            widget = QLineEdit()
-            widget.setPlaceholderText(field.get("default", ""))
-            widget.setText(saved_settings.get(field["id"], "") or field.get("default", ""))
-            widget.setEchoMode(QLineEdit.Password if field.get("secret") else QLineEdit.Normal)
-            widget.setStyleSheet(
-                "QLineEdit { background:#1b2028; border:1px solid #2a3340; "
-                "border-radius:10px; color:#f3f4f6; padding:8px; } "
-                "QLineEdit:focus { border-color:#4f7ee5; }"
-            )
+            value = saved_settings.get(field["id"], "") or field.get("default", "")
+            if field.get("options"):
+                widget = QComboBox()
+                widget.setEditable(bool(field.get("editable")))
+                widget.addItems(field.get("options", []))
+                if widget.findText(value) < 0 and value:
+                    widget.addItem(value)
+                widget.setCurrentText(value)
+                widget.setStyleSheet(
+                    "QComboBox { background:#1b2028; border:1px solid #2a3340; "
+                    "border-radius:10px; color:#f3f4f6; padding:8px; } "
+                    "QComboBox:focus { border-color:#4f7ee5; }"
+                )
+            else:
+                widget = QLineEdit()
+                widget.setPlaceholderText(field.get("default", ""))
+                widget.setText(value)
+                widget.setEchoMode(QLineEdit.Password if field.get("secret") else QLineEdit.Normal)
+                widget.setStyleSheet(
+                    "QLineEdit { background:#1b2028; border:1px solid #2a3340; "
+                    "border-radius:10px; color:#f3f4f6; padding:8px; } "
+                    "QLineEdit:focus { border-color:#4f7ee5; }"
+                )
             widget.setToolTip(field["prompt"])
             self.field_widgets[field["id"]] = widget
             self.fields_layout.addRow(label, widget)
@@ -116,7 +141,11 @@ class SettingsDialog(QDialog):
         provider = self.provider_combo.currentData()
         settings = {}
         for field in AIClient.provider_setting_fields(provider):
-            value = self.field_widgets[field["id"]].text().strip()
+            widget = self.field_widgets[field["id"]]
+            if isinstance(widget, QComboBox):
+                value = widget.currentText().strip()
+            else:
+                value = widget.text().strip()
             if not value:
                 value = str(field.get("default", "")).strip()
             if field["id"] == "base_url":
@@ -128,6 +157,7 @@ class SettingsDialog(QDialog):
         try:
             provider, settings = self.get_configuration()
         except ValueError as exc:
+            self.test_label.hide()
             self.error_label.setText(str(exc))
             self.error_label.show()
             return
@@ -135,4 +165,36 @@ class SettingsDialog(QDialog):
         self.selected_provider = provider
         self.selected_settings = settings
         self.error_label.hide()
+        self.test_label.hide()
         super().accept()
+
+    def _test_connection(self):
+        try:
+            provider, settings = self.get_configuration()
+        except ValueError as exc:
+            self.test_label.hide()
+            self.error_label.setText(str(exc))
+            self.error_label.show()
+            return
+
+        self.error_label.hide()
+        self.test_label.setStyleSheet("color:#94a3b8;font-size:11px;")
+        self.test_label.setText("Testuje polaczenie...")
+        self.test_label.show()
+        self.test_button.setEnabled(False)
+        QApplication.processEvents()
+
+        try:
+            client = AIClient(provider, settings)
+            message = client.test_connection()
+        except Exception as exc:
+            self.test_label.hide()
+            self.error_label.setText(f"Test nie powiodl sie: {exc}")
+            self.error_label.show()
+        else:
+            self.error_label.hide()
+            self.test_label.setStyleSheet("color:#86efac;font-size:11px;")
+            self.test_label.setText(message)
+            self.test_label.show()
+        finally:
+            self.test_button.setEnabled(True)

@@ -3,6 +3,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from .logger import SessionLogger
+
 
 class AIClient:
     PROVIDERS = {
@@ -58,6 +60,27 @@ class AIClient:
             "base_url": "https://openrouter.ai/api/v1",
             "api_style": "openai_compatible",
             "settings": [
+                {
+                    "id": "model",
+                    "label": "Model",
+                    "prompt": (
+                        "Podaj nazwe modelu OpenRouter, np. "
+                        "anthropic/claude-sonnet-4 albo google/gemini-2.5-flash-lite."
+                    ),
+                    "required": True,
+                    "default": "openai/gpt-4o-mini",
+                    "prompt_if_missing": True,
+                    "options": [
+                        "anthropic/claude-sonnet-4",
+                        "anthropic/claude-haiku-4.5",
+                        "google/gemini-2.5-flash-lite",
+                        "deepseek/deepseek-chat-v3.1",
+                        "qwen/qwen3-14b",
+                        "mistralai/mistral-small-3.2",
+                        "openai/gpt-4o-mini",
+                    ],
+                    "editable": True,
+                },
                 {
                     "id": "api_key",
                     "label": "Klucz API",
@@ -127,6 +150,12 @@ class AIClient:
                     "required": True,
                     "default": "local-model",
                     "prompt_if_missing": True,
+                    "options": [
+                        "local-model",
+                        "qwen3-14b",
+                        "llama-3.1-8b-instruct",
+                    ],
+                    "editable": True,
                 },
                 {
                     "id": "api_key",
@@ -210,6 +239,7 @@ class AIClient:
 
     def __init__(self, provider: str, settings):
         self.history = []
+        self.logger = SessionLogger()
         self.system_prompt = (
             "Jestes ekspertem GIS zintegrowanym z QGIS 3.x. "
             "Specjalizujesz sie w analizie danych przestrzennych, "
@@ -246,6 +276,8 @@ class AIClient:
         return self.api_style == "openai_compatible"
 
     def chat(self, user_message: str, tools=None, tool_executor=None, status_callback=None) -> str:
+        if self.logger:
+            self.logger.log_user_message(user_message)
         pending_history = self.history + [{"role": "user", "content": user_message}]
 
         if self.supports_tools() and tools and tool_executor:
@@ -264,10 +296,34 @@ class AIClient:
         if not reply:
             raise Exception("API zwrocilo pusta odpowiedz.")
         self.history = updated_history
+        if self.logger:
+            self.logger.log_agent_reply(reply)
         return reply
 
     def reset(self):
         self.history = []
+        if self.logger:
+            self.logger.reset_session()
+
+    def test_connection(self):
+        probe_history = [{"role": "user", "content": "Odpowiedz jednym slowem: OK"}]
+        payload, headers, url = self._build_request(probe_history)
+
+        if self.api_style == "anthropic":
+            payload["max_tokens"] = 8
+        elif self.api_style == "gemini":
+            payload["generationConfig"]["maxOutputTokens"] = 8
+        else:
+            payload["max_tokens"] = 8
+
+        result = self._post_json(url, payload, headers)
+        reply = self._parse_reply(result)
+        if not reply:
+            raise Exception("Provider odpowiedzial bez tresci.")
+        return (
+            f"Polaczenie OK. Provider: {self.provider_label(self.provider)}. "
+            f"Model: {self.model}."
+        )
 
     def _chat_with_tools(self, pending_history, tools, tool_executor, status_callback=None):
         history = list(pending_history)
@@ -291,7 +347,24 @@ class AIClient:
                     tool_args = self._parse_tool_arguments(tool_call)
                     if status_callback:
                         status_callback(f"Wywoluje narzedzie QGIS: {tool_name}...")
-                    tool_result = tool_executor(tool_name, tool_args)
+                    try:
+                        tool_result = tool_executor(tool_name, tool_args)
+                        if self.logger:
+                            self.logger.log_tool_call(
+                                tool_name,
+                                tool_args,
+                                tool_result,
+                                success=True,
+                            )
+                    except Exception as exc:
+                        if self.logger:
+                            self.logger.log_tool_call(
+                                tool_name,
+                                tool_args,
+                                str(exc),
+                                success=False,
+                            )
+                        raise
                     history.append(
                         {
                             "role": "tool",
